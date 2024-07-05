@@ -3,7 +3,7 @@
 This plugin adds a simplified Vector Database type to Unreal Engine 5, designed with blueprints in mind. 
 ## WARNING: WORK IN PROGRESS
 
-This is still in an early state, so don't be surprised if you experience crashes. This information is useful for me however, so don't be afraid to open an issue or send crash logs my way.
+This is still in an early state, so don't be surprised if you experience crashes. I am making this plugin for myself for some particular projects, but I figured it'd be nice to share it. If you do try it out and experience issues, feel free to open a new issue with any log information that could be helpful.
 
 ## Installation
 
