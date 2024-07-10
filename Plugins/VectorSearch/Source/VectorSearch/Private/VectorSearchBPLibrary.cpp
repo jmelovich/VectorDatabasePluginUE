@@ -1,40 +1,40 @@
 #include "VectorSearchBPLibrary.h"
 #include "VectorSearch.h"
-#include "VectorSearchTypes.h" // Add this line to include FUserStructWrapper
+#include "VectorSearchTypes.h"
 
 UVectorDatabase* UVectorSearchBPLibrary::CreateVectorDatabase()
 {
     return NewObject<UVectorDatabase>();
 }
 
-void UVectorSearchBPLibrary::AddStringEntryToVectorDatabase(UVectorDatabase* Database, const TArray<float>& Vector, FString Entry)
+void UVectorSearchBPLibrary::AddStringEntryToVectorDatabase(UVectorDatabase* Database, const TArray<float>& Vector, FString Entry, FString Category)
 {
     if (Database)
     {
         UVectorEntryWrapper* Wrapper = NewObject<UVectorEntryWrapper>();
         Wrapper->StringValue = Entry;
         Wrapper->EntryType = EEntryType::String;
-        Database->AddEntry(Vector, Wrapper);
+        Database->AddEntry(Vector, Wrapper, Category);
     }
 }
 
-void UVectorSearchBPLibrary::AddObjectEntryToVectorDatabase(UVectorDatabase* Database, const TArray<float>& Vector, UObject* Entry)
+void UVectorSearchBPLibrary::AddObjectEntryToVectorDatabase(UVectorDatabase* Database, const TArray<float>& Vector, UObject* Entry, FString Category)
 {
     if (Database && Entry)
     {
         UVectorEntryWrapper* Wrapper = NewObject<UVectorEntryWrapper>();
         Wrapper->ObjectValue = Entry;
         Wrapper->EntryType = EEntryType::Object;
-        Database->AddEntry(Vector, Wrapper);
+        Database->AddEntry(Vector, Wrapper, Category);
     }
 }
 
-TArray<FString> UVectorSearchBPLibrary::GetTopNStringMatches(UVectorDatabase* Database, const TArray<float>& QueryVector, int32 N)
+TArray<FString> UVectorSearchBPLibrary::GetTopNStringMatches(UVectorDatabase* Database, const TArray<float>& QueryVector, int32 N, const TArray<FString>& Categories)
 {
     TArray<FString> Results;
     if (Database)
     {
-        TArray<UVectorEntryWrapper*> Matches = Database->GetTopNMatches(QueryVector, N, EEntryType::String);
+        TArray<UVectorEntryWrapper*> Matches = Database->GetTopNMatches(QueryVector, N, EEntryType::String, Categories);
         for (UVectorEntryWrapper* Match : Matches)
         {
             Results.Add(Match->StringValue);
@@ -43,12 +43,12 @@ TArray<FString> UVectorSearchBPLibrary::GetTopNStringMatches(UVectorDatabase* Da
     return Results;
 }
 
-TArray<UObject*> UVectorSearchBPLibrary::GetTopNObjectMatches(UVectorDatabase* Database, const TArray<float>& QueryVector, int32 N)
+TArray<UObject*> UVectorSearchBPLibrary::GetTopNObjectMatches(UVectorDatabase* Database, const TArray<float>& QueryVector, int32 N, const TArray<FString>& Categories)
 {
     TArray<UObject*> Results;
     if (Database)
     {
-        TArray<UVectorEntryWrapper*> Matches = Database->GetTopNMatches(QueryVector, N, EEntryType::Object);
+        TArray<UVectorEntryWrapper*> Matches = Database->GetTopNMatches(QueryVector, N, EEntryType::Object, Categories);
         for (UVectorEntryWrapper* Match : Matches)
         {
             if (Match->ObjectValue)
@@ -68,36 +68,65 @@ void UVectorSearchBPLibrary::DeepCopyStruct(UScriptStruct* StructType, void* Des
         return;
     }
 
-    // Iterate over all properties of the struct
     for (TFieldIterator<FProperty> It(StructType); It; ++It)
     {
         FProperty* Property = *It;
 
         if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
         {
-            // Find pointers to the nested structs in both the destination and source
             void* DestNestedStruct = StructProp->ContainerPtrToValuePtr<void>(Dest);
             const void* SrcNestedStruct = StructProp->ContainerPtrToValuePtr<const void>(Src);
 
             UScriptStruct* NestedStructType = StructProp->Struct;
             if (DestNestedStruct && SrcNestedStruct && NestedStructType)
             {
-                // Initialize the destination nested struct instance
                 NestedStructType->InitializeStruct(DestNestedStruct);
-
-                // Recursively copy the contents of the nested struct
                 DeepCopyStruct(NestedStructType, DestNestedStruct, SrcNestedStruct);
             }
         }
         else
         {
-            // For simple properties, use property-based assignment
             void* DestValuePtr = Property->ContainerPtrToValuePtr<void>(Dest);
             const void* SrcValuePtr = Property->ContainerPtrToValuePtr<const void>(Src);
             Property->CopyCompleteValue(DestValuePtr, SrcValuePtr);
         }
     }
 }
+
+// DEFINE_FUNCTION(UVectorSearchBPLibrary::execAddStructEntryToVectorDatabase)
+// {
+//     P_GET_OBJECT(UVectorDatabase, Database);
+//     P_GET_TARRAY(float, Vector);
+
+//     Stack.StepCompiledIn<FStructProperty>(nullptr);
+//     void* StructPtr = nullptr;
+//     FStructProperty* StructProperty = CastField<FStructProperty>(Stack.MostRecentProperty);
+
+//     P_GET_PROPERTY(FStrProperty, Category);
+
+//     P_FINISH;
+
+//     P_NATIVE_BEGIN;
+//     if (StructProperty)
+//     {
+//         TUniquePtr<uint8[]> NewStructInstance(new uint8[StructProperty->Struct->GetStructureSize()]);
+//         if (NewStructInstance)
+//         {
+//             StructProperty->Struct->InitializeStruct(NewStructInstance.Get());
+//             DeepCopyStruct(StructProperty->Struct, NewStructInstance.Get(), StructPtr);
+
+//             if (Database)
+//             {
+//                 Database->AddStructEntry(Vector, StructProperty->Struct, NewStructInstance.Get(), Category);
+//             }
+//         }
+//         else
+//         {
+//             UE_LOG(LogTemp, Error, TEXT("Failed to allocate memory for new struct instance"));
+//         }
+//     }
+//     P_NATIVE_END;
+// }
 
 DEFINE_FUNCTION(UVectorSearchBPLibrary::execAddStructEntryToVectorDatabase)
 {
@@ -107,6 +136,8 @@ DEFINE_FUNCTION(UVectorSearchBPLibrary::execAddStructEntryToVectorDatabase)
     Stack.StepCompiledIn<FStructProperty>(nullptr);
     void* StructPtr = nullptr;
     FStructProperty* StructProperty = CastField<FStructProperty>(Stack.MostRecentProperty);
+
+    P_GET_PROPERTY(FStrProperty, Category);
 
     if (StructProperty)
     {
@@ -150,7 +181,7 @@ DEFINE_FUNCTION(UVectorSearchBPLibrary::execAddStructEntryToVectorDatabase)
                 UVectorEntryWrapper* Wrapper = NewObject<UVectorEntryWrapper>();
                 Wrapper->SetStructData(StructProperty->Struct, NewStructInstance.Get());
                 Wrapper->EntryType = EEntryType::Struct;
-                Database->AddEntry(Vector, Wrapper);
+                Database->AddEntry(Vector, Wrapper, Category);
             }
         }
         else
@@ -167,6 +198,18 @@ DEFINE_FUNCTION(UVectorSearchBPLibrary::execGetTopNStructMatches)
     P_GET_TARRAY(float, QueryVector);
     P_GET_PROPERTY(FIntProperty, N);
 
+    // Initialize Categories as an empty array by default
+    TArray<FString> Categories;
+
+    // Check if there's a Categories array provided in the blueprint
+    FArrayProperty* CategoriesArrayProp = nullptr;
+    Stack.StepCompiledIn<FArrayProperty>(nullptr);
+    CategoriesArrayProp = CastField<FArrayProperty>(Stack.MostRecentProperty);
+    if (CategoriesArrayProp)
+    {
+        Categories = *reinterpret_cast<TArray<FString>*>(Stack.MostRecentPropertyAddress);
+    }
+
     Stack.StepCompiledIn<FArrayProperty>(nullptr);
     void* OutStructArrayPtr = Stack.MostRecentPropertyAddress;
     FArrayProperty* OutStructArrayProp = CastField<FArrayProperty>(Stack.MostRecentProperty);
@@ -177,7 +220,7 @@ DEFINE_FUNCTION(UVectorSearchBPLibrary::execGetTopNStructMatches)
     P_NATIVE_BEGIN;
     if (Database && OutStructArrayPtr && OutStructProp)
     {
-        TArray<FVectorDatabaseResult> Results = Database->GetTopNStructMatches(QueryVector, N);
+        TArray<FVectorDatabaseResult> Results = Database->GetTopNStructMatches(QueryVector, N, Categories);
         FScriptArrayHelper OutStructArray(OutStructArrayProp, OutStructArrayPtr);
         OutStructArray.EmptyAndAddUninitializedValues(Results.Num());
 
@@ -186,11 +229,7 @@ DEFINE_FUNCTION(UVectorSearchBPLibrary::execGetTopNStructMatches)
             if (Results[i].StructType == OutStructProp->Struct)
             {
                 void* DestStructPtr = OutStructArray.GetRawPtr(i);
-
-                // Ensure proper initialization of the destination struct
                 OutStructProp->InitializeValue(DestStructPtr);
-
-                // Copy the structure data directly into the destination pointer.
                 OutStructProp->Struct->CopyScriptStruct(DestStructPtr, Results[i].StructData.GetData());
             }
             else
@@ -206,6 +245,9 @@ DEFINE_FUNCTION(UVectorSearchBPLibrary::execGetTopNStructMatches)
     }
     P_NATIVE_END;
 }
+
+
+
 
 int32 UVectorSearchBPLibrary::GetNumberOfEntriesInVectorDatabase(UVectorDatabase* Database)
 {
@@ -252,11 +294,11 @@ bool UVectorSearchBPLibrary::RemoveEntryFromVectorDatabase(UVectorDatabase* Data
     return false;
 }
 
-TArray<FVectorDatabaseEntry> UVectorSearchBPLibrary::GetTopNEntriesWithDetails(UVectorDatabase* Database, const TArray<float>& QueryVector, int32 N)
+TArray<FVectorDatabaseEntry> UVectorSearchBPLibrary::GetTopNEntriesWithDetails(UVectorDatabase* Database, const TArray<float>& QueryVector, int32 N, const TArray<FString>& Categories)
 {
     if (Database)
     {
-        return Database->GetTopNEntriesWithDetails(QueryVector, N);
+        return Database->GetTopNEntriesWithDetails(QueryVector, N, Categories);
     }
     return TArray<FVectorDatabaseEntry>();
 }
@@ -276,10 +318,7 @@ DEFINE_FUNCTION(UVectorSearchBPLibrary::execGetStructFromVectorDatabaseEntry)
     {
         if (Entry.Entry->StructType == OutStructProp->Struct)
         {
-            // Ensure proper initialization of the destination struct
             OutStructProp->InitializeValue(OutStructPtr);
-
-            // Copy the structure data directly into the destination pointer.
             OutStructProp->Struct->CopyScriptStruct(OutStructPtr, Entry.Entry->StructData.GetData());
         }
         else

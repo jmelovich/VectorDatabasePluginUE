@@ -7,7 +7,6 @@ UVectorDatabase::UVectorDatabase()
     Vectors.Empty();
 }
 
-
 UVectorDatabase::~UVectorDatabase()
 {
     for (UVectorEntryWrapper* Entry : Entries)
@@ -21,7 +20,7 @@ UVectorDatabase::~UVectorDatabase()
     Vectors.Empty();
 }
 
-void UVectorDatabase::AddEntry(const TArray<float>& Vector, UVectorEntryWrapper* Entry)
+void UVectorDatabase::AddEntry(const TArray<float>& Vector, UVectorEntryWrapper* Entry, const FString& Category)
 {
     if (!Entry || !IsValid(Entry))
     {
@@ -29,13 +28,13 @@ void UVectorDatabase::AddEntry(const TArray<float>& Vector, UVectorEntryWrapper*
         return;
     }
 
-    // Use a transaction to ensure both arrays are updated atomically
+    Entry->Category = Category;
+
     int32 NewIndex = Entries.Add(Entry);
     if (NewIndex != INDEX_NONE)
     {
         Vectors.Add(Vector);
         
-        // Ensure the Entry is owned by this UVectorDatabase
         Entry->Rename(nullptr, this);
     }
     else
@@ -44,34 +43,7 @@ void UVectorDatabase::AddEntry(const TArray<float>& Vector, UVectorEntryWrapper*
     }
 }
 
-void UVectorEntryWrapper::SetStructData(UScriptStruct* InStructType, const void* InStructData)
-{
-    if (!InStructType || !InStructData)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SetStructData: Invalid StructType or StructData"));
-        return;
-    }
-
-    // Clean up previous data if it exists
-    if (StructType && StructData.Num() > 0)
-    {
-        StructType->DestroyStruct(StructData.GetData());
-    }
-
-    StructType = InStructType;
-    const int32 StructSize = StructType->GetStructureSize();
-
-    StructData.SetNum(StructSize, false);
-
-    // Use placement new to initialize the struct in-place
-    StructType->InitializeStruct(StructData.GetData());
-
-    // Use the struct's copy constructor for proper copying
-    StructType->CopyScriptStruct(StructData.GetData(), InStructData);
-}
-
-
-void UVectorDatabase::AddStructEntry(const TArray<float>& Vector, UScriptStruct* StructType, const void* StructPtr)
+void UVectorDatabase::AddStructEntry(const TArray<float>& Vector, UScriptStruct* StructType, const void* StructPtr, const FString& Category)
 {
     if (!StructType || !StructPtr)
     {
@@ -88,20 +60,21 @@ void UVectorDatabase::AddStructEntry(const TArray<float>& Vector, UScriptStruct*
 
     Wrapper->SetStructData(StructType, StructPtr);
     Wrapper->EntryType = EEntryType::Struct;
+    Wrapper->Category = Category;
     
     UE_LOG(LogTemp, Log, TEXT("AddStructEntry: StructType: %s, StructSize: %d"), *StructType->GetName(), StructType->GetStructureSize());
     UE_LOG(LogTemp, Log, TEXT("AddStructEntry: Wrapper->StructData.Num(): %d"), Wrapper->StructData.Num());
 
-    AddEntry(Vector, Wrapper);
+    AddEntry(Vector, Wrapper, Category);
 }
 
-TArray<UVectorEntryWrapper*> UVectorDatabase::GetTopNMatches(const TArray<float>& QueryVector, int32 N, EEntryType EntryType) const
+TArray<UVectorEntryWrapper*> UVectorDatabase::GetTopNMatches(const TArray<float>& QueryVector, int32 N, EEntryType EntryType, const TArray<FString>& Categories) const
 {
     TArray<TPair<float, UVectorEntryWrapper*>> DistanceEntryPairs;
     
     for (int32 i = 0; i < Vectors.Num(); ++i)
     {
-        if (Entries[i]->EntryType == EntryType && QueryVector.Num() == Vectors[i].Num())
+        if (Entries[i]->EntryType == EntryType && QueryVector.Num() == Vectors[i].Num() && ShouldIncludeEntry(Entries[i], Categories))
         {
             float Distance = CalculateDistance(QueryVector, Vectors[i]);
             DistanceEntryPairs.Add(TPair<float, UVectorEntryWrapper*>(Distance, Entries[i]));
@@ -121,13 +94,13 @@ TArray<UVectorEntryWrapper*> UVectorDatabase::GetTopNMatches(const TArray<float>
     return Result;
 }
 
-TArray<FVectorDatabaseResult> UVectorDatabase::GetTopNStructMatches(const TArray<float>& QueryVector, int32 N) const
+TArray<FVectorDatabaseResult> UVectorDatabase::GetTopNStructMatches(const TArray<float>& QueryVector, int32 N, const TArray<FString>& Categories) const
 {
     TArray<TPair<float, UVectorEntryWrapper*>> DistanceEntryPairs;
     
     for (int32 i = 0; i < Vectors.Num(); ++i)
     {
-        if (Entries[i]->EntryType == EEntryType::Struct && QueryVector.Num() == Vectors[i].Num())
+        if (Entries[i]->EntryType == EEntryType::Struct && QueryVector.Num() == Vectors[i].Num() && ShouldIncludeEntry(Entries[i], Categories))
         {
             float Distance = CalculateDistance(QueryVector, Vectors[i]);
             DistanceEntryPairs.Add(TPair<float, UVectorEntryWrapper*>(Distance, Entries[i]));
@@ -145,6 +118,37 @@ TArray<FVectorDatabaseResult> UVectorDatabase::GetTopNStructMatches(const TArray
         Result.Distance = DistanceEntryPairs[i].Key;
         Result.StructType = DistanceEntryPairs[i].Value->StructType;
         Result.StructData = DistanceEntryPairs[i].Value->StructData;
+        Result.Category = DistanceEntryPairs[i].Value->Category;
+        Results.Add(Result);
+    }
+
+    return Results;
+}
+
+TArray<FVectorDatabaseEntry> UVectorDatabase::GetTopNEntriesWithDetails(const TArray<float>& QueryVector, int32 N, const TArray<FString>& Categories) const
+{
+    TArray<TPair<float, int32>> DistanceIndexPairs;
+    
+    for (int32 i = 0; i < Vectors.Num(); ++i)
+    {
+        if (QueryVector.Num() == Vectors[i].Num() && ShouldIncludeEntry(Entries[i], Categories))
+        {
+            float Distance = CalculateDistance(QueryVector, Vectors[i]);
+            DistanceIndexPairs.Add(TPair<float, int32>(Distance, i));
+        }
+    }
+
+    DistanceIndexPairs.Sort([](const TPair<float, int32>& A, const TPair<float, int32>& B) {
+        return A.Key < B.Key;
+    });
+
+    TArray<FVectorDatabaseEntry> Results;
+    for (int32 i = 0; i < FMath::Min(N, DistanceIndexPairs.Num()); ++i)
+    {
+        FVectorDatabaseEntry Result;
+        Result.Distance = DistanceIndexPairs[i].Key;
+        Result.Vector = Vectors[DistanceIndexPairs[i].Value];
+        Result.Entry = Entries[DistanceIndexPairs[i].Value];
         Results.Add(Result);
     }
 
@@ -153,7 +157,6 @@ TArray<FVectorDatabaseResult> UVectorDatabase::GetTopNStructMatches(const TArray
 
 float UVectorDatabase::CalculateDistance(const TArray<float>& Vec1, const TArray<float>& Vec2) const
 {
-    // Ensure vectors have the same dimension
     if (Vec1.Num() != Vec2.Num())
     {
         return MAX_FLT;
@@ -168,6 +171,12 @@ float UVectorDatabase::CalculateDistance(const TArray<float>& Vec1, const TArray
 
     return FMath::Sqrt(SumSquaredDiff);
 }
+
+bool UVectorDatabase::ShouldIncludeEntry(const UVectorEntryWrapper* Entry, const TArray<FString>& Categories) const
+{
+    return Categories.Num() == 0 || Categories.Contains(Entry->Category);
+}
+
 
 int32 UVectorDatabase::GetNumberOfEntries() const
 {
@@ -236,32 +245,58 @@ bool UVectorDatabase::RemoveEntry(const TArray<float>& Vector, bool bRemoveAllOc
     return bEntryRemoved;
 }
 
-TArray<FVectorDatabaseEntry> UVectorDatabase::GetTopNEntriesWithDetails(const TArray<float>& QueryVector, int32 N) const
-{
-    TArray<TPair<float, int32>> DistanceIndexPairs;
+// TArray<FVectorDatabaseEntry> UVectorDatabase::GetTopNEntriesWithDetails(const TArray<float>& QueryVector, int32 N) const
+// {
+//     TArray<TPair<float, int32>> DistanceIndexPairs;
     
-    for (int32 i = 0; i < Vectors.Num(); ++i)
+//     for (int32 i = 0; i < Vectors.Num(); ++i)
+//     {
+//         if (QueryVector.Num() == Vectors[i].Num())
+//         {
+//             float Distance = CalculateDistance(QueryVector, Vectors[i]);
+//             DistanceIndexPairs.Add(TPair<float, int32>(Distance, i));
+//         }
+//     }
+
+//     DistanceIndexPairs.Sort([](const TPair<float, int32>& A, const TPair<float, int32>& B) {
+//         return A.Key < B.Key;
+//     });
+
+//     TArray<FVectorDatabaseEntry> Results;
+//     for (int32 i = 0; i < FMath::Min(N, DistanceIndexPairs.Num()); ++i)
+//     {
+//         FVectorDatabaseEntry Result;
+//         Result.Distance = DistanceIndexPairs[i].Key;
+//         Result.Vector = Vectors[DistanceIndexPairs[i].Value];
+//         Result.Entry = Entries[DistanceIndexPairs[i].Value];
+//         Results.Add(Result);
+//     }
+
+//     return Results;
+// }
+
+void UVectorEntryWrapper::SetStructData(UScriptStruct* InStructType, const void* InStructData)
+{
+    if (!InStructType || !InStructData)
     {
-        if (QueryVector.Num() == Vectors[i].Num())
-        {
-            float Distance = CalculateDistance(QueryVector, Vectors[i]);
-            DistanceIndexPairs.Add(TPair<float, int32>(Distance, i));
-        }
+        UE_LOG(LogTemp, Error, TEXT("SetStructData: Invalid StructType or StructData"));
+        return;
     }
 
-    DistanceIndexPairs.Sort([](const TPair<float, int32>& A, const TPair<float, int32>& B) {
-        return A.Key < B.Key;
-    });
-
-    TArray<FVectorDatabaseEntry> Results;
-    for (int32 i = 0; i < FMath::Min(N, DistanceIndexPairs.Num()); ++i)
+    // Clean up previous data if it exists
+    if (StructType && StructData.Num() > 0)
     {
-        FVectorDatabaseEntry Result;
-        Result.Distance = DistanceIndexPairs[i].Key;
-        Result.Vector = Vectors[DistanceIndexPairs[i].Value];
-        Result.Entry = Entries[DistanceIndexPairs[i].Value];
-        Results.Add(Result);
+        StructType->DestroyStruct(StructData.GetData());
     }
 
-    return Results;
+    StructType = InStructType;
+    const int32 StructSize = StructType->GetStructureSize();
+
+    StructData.SetNum(StructSize, false);
+
+    // Use placement new to initialize the struct in-place
+    StructType->InitializeStruct(StructData.GetData());
+
+    // Use the struct's copy constructor for proper copying
+    StructType->CopyScriptStruct(StructData.GetData(), InStructData);
 }

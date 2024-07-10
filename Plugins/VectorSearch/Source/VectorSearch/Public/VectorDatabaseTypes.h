@@ -22,7 +22,8 @@ public:
         : StringValue(TEXT("")),
           ObjectValue(nullptr),
           StructType(nullptr),
-          EntryType(EEntryType::String)
+          EntryType(EEntryType::String),
+          Category(TEXT(""))
     {
     }
 
@@ -41,6 +42,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite)
     EEntryType EntryType;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    FString Category;
+
     void SetStructData(UScriptStruct* InStructType, const void* InStructData);
 };
 
@@ -57,6 +61,9 @@ struct VECTORSEARCH_API FVectorDatabaseResult
 
     UPROPERTY(BlueprintReadOnly, Category = "Vector Database")
     TArray<uint8> StructData;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Vector Database")
+    FString Category;
 };
 
 USTRUCT(BlueprintType)
@@ -83,15 +90,15 @@ public:
     UVectorDatabase();
     virtual ~UVectorDatabase();
 
-    void AddEntry(const TArray<float>& Vector, UVectorEntryWrapper* Entry);
+    void AddEntry(const TArray<float>& Vector, UVectorEntryWrapper* Entry, const FString& Category);
     
-    void AddStructEntry(const TArray<float>& Vector, UScriptStruct* StructType, const void* StructPtr);
+    void AddStructEntry(const TArray<float>& Vector, UScriptStruct* StructType, const void* StructPtr, const FString& Category);
 
-    TArray<UVectorEntryWrapper*> GetTopNMatches(const TArray<float>& QueryVector, int32 N, EEntryType EntryType) const;
+    TArray<UVectorEntryWrapper*> GetTopNMatches(const TArray<float>& QueryVector, int32 N, EEntryType EntryType, const TArray<FString>& Categories) const;
 
-    TArray<FVectorDatabaseResult> GetTopNStructMatches(const TArray<float>& QueryVector, int32 N) const;
+    TArray<FVectorDatabaseResult> GetTopNStructMatches(const TArray<float>& QueryVector, int32 N, const TArray<FString>& Categories) const;
 
-    TArray<FVectorDatabaseEntry> GetTopNEntriesWithDetails(const TArray<float>& QueryVector, int32 N) const;
+    TArray<FVectorDatabaseEntry> GetTopNEntriesWithDetails(const TArray<float>& QueryVector, int32 N, const TArray<FString>& Categories) const;
 
     int32 GetNumberOfEntries() const;
 
@@ -110,4 +117,6 @@ private:
     TArray<TArray<float>> Vectors;
 
     float CalculateDistance(const TArray<float>& Vec1, const TArray<float>& Vec2) const;
+
+    bool ShouldIncludeEntry(const UVectorEntryWrapper* Entry, const TArray<FString>& Categories) const;
 };
