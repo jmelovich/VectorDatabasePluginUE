@@ -1,6 +1,8 @@
 #include "VectorSearchBPLibrary.h"
 #include "VectorSearch.h"
 #include "VectorSearchTypes.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "UObject/SavePackage.h"
 
 UVectorDatabase* UVectorSearchBPLibrary::CreateVectorDatabase()
 {
@@ -332,4 +334,75 @@ DEFINE_FUNCTION(UVectorSearchBPLibrary::execGetStructFromVectorDatabaseEntry)
                OutStructPtr, OutStructProp, Entry.Entry);
     }
     P_NATIVE_END;
+}
+
+UVectorDatabaseAsset* UVectorSearchBPLibrary::CreateVectorDatabaseAsset(UVectorDatabase* Database, FString AssetName, FString PackagePath)
+{
+    if (!Database)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Invalid Database provided to CreateVectorDatabaseAsset"));
+        return nullptr;
+    }
+
+    // Ensure the PackagePath starts with /Game/
+    if (!PackagePath.StartsWith(TEXT("/Game/")))
+    {
+        PackagePath = FString::Printf(TEXT("/Game/%s"), *PackagePath);
+    }
+
+    // Create a unique package name
+    FString PackageName = PackagePath / AssetName;
+    PackageName = PackageName.Replace(TEXT("//"), TEXT("/"));
+
+    // Create the package
+    UPackage* Package = CreatePackage(*PackageName);
+    if (!Package)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to create package for VectorDatabaseAsset"));
+        return nullptr;
+    }
+
+    // Create the asset
+    UVectorDatabaseAsset* NewAsset = NewObject<UVectorDatabaseAsset>(Package, *AssetName, RF_Public | RF_Standalone);
+    if (!NewAsset)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to create VectorDatabaseAsset"));
+        return nullptr;
+    }
+
+    // Save the database to the asset
+    NewAsset->SaveFromVectorDatabase(Database);
+
+    // Save the package
+    FString PackageFileName = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
+    if (PackageFileName.IsEmpty())
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to generate package filename for VectorDatabaseAsset"));
+        return nullptr;
+    }
+
+    FSavePackageArgs SaveArgs;
+    SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+    bool bSaved = UPackage::SavePackage(Package, NewAsset, *PackageFileName, SaveArgs);
+    if (!bSaved)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to save VectorDatabaseAsset package"));
+        return nullptr;
+    }
+
+    // Notify the asset registry
+    FAssetRegistryModule::AssetCreated(NewAsset);
+
+    return NewAsset;
+}
+
+UVectorDatabase* UVectorSearchBPLibrary::LoadVectorDatabaseFromAsset(UVectorDatabaseAsset* Asset)
+{
+    if (!Asset)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Invalid Asset provided to LoadVectorDatabaseFromAsset"));
+        return nullptr;
+    }
+
+    return Asset->LoadToVectorDatabase();
 }

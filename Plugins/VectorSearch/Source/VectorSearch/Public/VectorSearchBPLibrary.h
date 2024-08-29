@@ -2,6 +2,7 @@
 
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "VectorDatabaseTypes.h"
+#include "VectorDatabaseAsset.h"
 #include "VectorSearchBPLibrary.generated.h"
 
 UCLASS()
@@ -51,6 +52,12 @@ public:
 
     UFUNCTION(BlueprintCallable, CustomThunk, Category = "Vector Database", meta = (CustomStructureParam = "OutStruct"))
     static void GetStructFromVectorDatabaseEntry(const FVectorDatabaseEntry& Entry, int32& OutStruct);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static UVectorDatabaseAsset* CreateVectorDatabaseAsset(UVectorDatabase* Database, FString AssetName, FString PackagePath);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static UVectorDatabase* LoadVectorDatabaseFromAsset(UVectorDatabaseAsset* Asset);
 
     static void DeepCopyStruct(UScriptStruct* StructType, void* Dest, const void* Src);
 

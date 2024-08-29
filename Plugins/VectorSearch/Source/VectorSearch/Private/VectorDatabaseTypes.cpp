@@ -155,6 +155,28 @@ TArray<FVectorDatabaseEntry> UVectorDatabase::GetTopNEntriesWithDetails(const TA
     return Results;
 }
 
+TArray<FVectorDatabaseEntry> UVectorDatabase::GetAllVectorEntries(const TArray<FString>& Categories) const
+{
+    TArray<FVectorDatabaseEntry> Results;
+
+    int32 NumEntries = Entries.Num();
+    for (int32 i = 0; i < NumEntries; ++i)
+    {
+        if(Categories.Num() == 0 || Categories.Contains(Entries[i]->Category))
+        {
+            FVectorDatabaseEntry Result;
+            Result.Distance = 0.0f;
+            Result.Vector = Vectors[i];
+            Result.Entry = Entries[i];
+            Results.Add(Result);
+        }
+    }
+
+    return Results;
+}
+
+
+
 float UVectorDatabase::CalculateDistance(const TArray<float>& Vec1, const TArray<float>& Vec2) const
 {
     if (Vec1.Num() != Vec2.Num())

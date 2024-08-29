@@ -100,6 +100,8 @@ public:
 
     TArray<FVectorDatabaseEntry> GetTopNEntriesWithDetails(const TArray<float>& QueryVector, int32 N, const TArray<FString>& Categories) const;
 
+    TArray<FVectorDatabaseEntry> GetAllVectorEntries(const TArray<FString>& Categories) const;
+
     int32 GetNumberOfEntries() const;
 
     int32 GetNumberOfStringEntries() const;
