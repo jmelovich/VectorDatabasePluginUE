@@ -7,7 +7,7 @@ This is still in an early state, so don't be surprised if you experience crashes
 
 ## Installation
 
-This repo includes the entire project (UE 5.4.2) I am using to test & develop this plugin. You do **NOT** need to clone this entire project. To install the plugin, follow these steps:
+This repo includes the entire project (UE 5.4) I am using to test & develop this plugin. You do **NOT** need to clone this entire project. To install the plugin, follow these steps:
 
 1. Download the Plugins/VectorSearch folder and place it in your project's Plugins folder (create this if it doesn't exist)
    - At this point in time, you can attempt to open the project. There is a chance it will work already.
