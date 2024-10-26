@@ -32,6 +32,7 @@ public class VectorSearch : ModuleRules
 				"Json",
                 "JsonUtilities",
 				"AssetRegistry",
+				"HTTP",
             }
 			);
 			
