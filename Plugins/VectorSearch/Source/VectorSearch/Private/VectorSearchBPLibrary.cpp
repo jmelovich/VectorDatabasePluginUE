@@ -406,3 +406,179 @@ UVectorDatabase* UVectorSearchBPLibrary::LoadVectorDatabaseFromAsset(UVectorData
 
     return Asset->LoadToVectorDatabase();
 }
+
+bool UVectorSearchBPLibrary::SaveVectorDatabaseToFile(UVectorDatabaseAsset* Asset, const FString& FilePath)
+{
+    if (!Asset)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SaveVectorDatabaseToFile: Invalid Asset"));
+        return false;
+    }
+
+    return Asset->SaveToFile(FilePath);
+}
+
+bool UVectorSearchBPLibrary::LoadVectorDatabaseFromFile(UVectorDatabaseAsset* Asset, const FString& FilePath)
+{
+    if (!Asset)
+    {
+        UE_LOG(LogTemp, Error, TEXT("LoadVectorDatabaseFromFile: Invalid Asset"));
+        return false;
+    }
+
+    return Asset->LoadFromFile(FilePath);
+}
+
+TArray<FString> UVectorSearchBPLibrary::GetUniqueCategoriesFromDatabase(UVectorDatabase* Database)
+{
+    if (!Database)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GetUniqueCategoriesFromDatabase: Invalid Database"));
+        return TArray<FString>();
+    }
+
+    return Database->GetUniqueCategories();
+}
+
+int32 UVectorSearchBPLibrary::GetEntryCountForCategoryInDatabase(UVectorDatabase* Database, const FString& Category)
+{
+    if (!Database)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GetEntryCountForCategoryInDatabase: Invalid Database"));
+        return 0;
+    }
+
+    return Database->GetEntryCountForCategory(Category);
+}
+
+TArray<FVectorDatabaseEntry> UVectorSearchBPLibrary::GetEntriesForCategoryFromDatabase(UVectorDatabase* Database, const FString& Category)
+{
+    if (!Database)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GetEntriesForCategoryFromDatabase: Invalid Database"));
+        return TArray<FVectorDatabaseEntry>();
+    }
+
+    return Database->GetEntriesForCategory(Category);
+}
+
+void UVectorSearchBPLibrary::SetVectorDatabaseDistanceMetric(UVectorDatabase* Database, EVectorDistanceMetric Metric)
+{
+    if (!Database)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SetVectorDatabaseDistanceMetric: Invalid Database"));
+        return;
+    }
+
+    Database->SetDistanceMetric(Metric);
+}
+
+EVectorDistanceMetric UVectorSearchBPLibrary::GetVectorDatabaseDistanceMetric(UVectorDatabase* Database)
+{
+    if (!Database)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GetVectorDatabaseDistanceMetric: Invalid Database"));
+        return EVectorDistanceMetric::Euclidean;
+    }
+
+    return Database->GetDistanceMetric();
+}
+
+void UVectorSearchBPLibrary::ClearVectorDatabase(UVectorDatabase* Database)
+{
+    if (!Database)
+    {
+        UE_LOG(LogTemp, Error, TEXT("ClearVectorDatabase: Invalid Database"));
+        return;
+    }
+
+    Database->ClearDatabase();
+}
+
+bool UVectorSearchBPLibrary::IsVectorDatabaseEmpty(UVectorDatabase* Database)
+{
+    if (!Database)
+    {
+        UE_LOG(LogTemp, Error, TEXT("IsVectorDatabaseEmpty: Invalid Database"));
+        return true;
+    }
+
+    return Database->IsEmpty();
+}
+
+int32 UVectorSearchBPLibrary::GetVectorDimensionFromDatabase(UVectorDatabase* Database)
+{
+    if (!Database)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GetVectorDimensionFromDatabase: Invalid Database"));
+        return 0;
+    }
+
+    return Database->GetVectorDimension();
+}
+
+bool UVectorSearchBPLibrary::HasConsistentVectorDimensionInDatabase(UVectorDatabase* Database)
+{
+    if (!Database)
+    {
+        UE_LOG(LogTemp, Error, TEXT("HasConsistentVectorDimensionInDatabase: Invalid Database"));
+        return false;
+    }
+
+    return Database->HasConsistentVectorDimension();
+}
+
+void UVectorSearchBPLibrary::NormalizeVectorsInDatabase(UVectorDatabase* Database)
+{
+    if (!Database)
+    {
+        UE_LOG(LogTemp, Error, TEXT("NormalizeVectorsInDatabase: Invalid Database"));
+        return;
+    }
+
+    Database->NormalizeVectors();
+}
+
+FVectorDatabaseStats UVectorSearchBPLibrary::GetVectorDatabaseStats(UVectorDatabase* Database)
+{
+    if (!Database)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GetVectorDatabaseStats: Invalid Database"));
+        return FVectorDatabaseStats();
+    }
+
+    return Database->GetDatabaseStats();
+}
+
+TArray<FString> UVectorSearchBPLibrary::GetUniqueCategoriesFromAsset(UVectorDatabaseAsset* Asset)
+{
+    if (!Asset)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GetUniqueCategoriesFromAsset: Invalid Asset"));
+        return TArray<FString>();
+    }
+
+    return Asset->GetUniqueCategories();
+}
+
+int32 UVectorSearchBPLibrary::GetEntryCountForCategoryInAsset(UVectorDatabaseAsset* Asset, const FString& Category)
+{
+    if (!Asset)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GetEntryCountForCategoryInAsset: Invalid Asset"));
+        return 0;
+    }
+
+    return Asset->GetEntryCountForCategory(Category);
+}
+
+TArray<FVectorDatabaseEntry> UVectorSearchBPLibrary::GetEntriesForCategoryFromAsset(UVectorDatabaseAsset* Asset, const FString& Category)
+{
+    if (!Asset)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GetEntriesForCategoryFromAsset: Invalid Asset"));
+        return TArray<FVectorDatabaseEntry>();
+    }
+
+    return Asset->GetEntriesForCategory(Category);
+}

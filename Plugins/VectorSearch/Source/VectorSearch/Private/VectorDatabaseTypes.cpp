@@ -1,10 +1,12 @@
 #include "VectorDatabaseTypes.h"
 #include "Algo/Sort.h"
+#include "Misc/DefaultValueHelper.h"
 
 UVectorDatabase::UVectorDatabase()
 {
     Entries.Empty();
     Vectors.Empty();
+    DistanceMetric = EVectorDistanceMetric::Euclidean;
 }
 
 UVectorDatabase::~UVectorDatabase()
@@ -25,6 +27,14 @@ void UVectorDatabase::AddEntry(const TArray<float>& Vector, UVectorEntryWrapper*
     if (!Entry || !IsValid(Entry))
     {
         UE_LOG(LogTemp, Error, TEXT("AddEntry: Invalid Entry"));
+        return;
+    }
+
+    // Validate vector dimension consistency
+    if (Vectors.Num() > 0 && Vectors[0].Num() != Vector.Num())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AddEntry: Vector dimension mismatch. Expected %d, got %d"), 
+               Vectors[0].Num(), Vector.Num());
         return;
     }
 
@@ -81,9 +91,21 @@ TArray<UVectorEntryWrapper*> UVectorDatabase::GetTopNMatches(const TArray<float>
         }
     }
 
-    DistanceEntryPairs.Sort([](const TPair<float, UVectorEntryWrapper*>& A, const TPair<float, UVectorEntryWrapper*>& B) {
-        return A.Key < B.Key;
-    });
+    // Sort based on distance metric
+    if (DistanceMetric == EVectorDistanceMetric::Cosine || DistanceMetric == EVectorDistanceMetric::DotProduct)
+    {
+        // For similarity metrics, higher values are better
+        DistanceEntryPairs.Sort([](const TPair<float, UVectorEntryWrapper*>& A, const TPair<float, UVectorEntryWrapper*>& B) {
+            return A.Key > B.Key;
+        });
+    }
+    else
+    {
+        // For distance metrics, lower values are better
+        DistanceEntryPairs.Sort([](const TPair<float, UVectorEntryWrapper*>& A, const TPair<float, UVectorEntryWrapper*>& B) {
+            return A.Key < B.Key;
+        });
+    }
 
     TArray<UVectorEntryWrapper*> Result;
     for (int32 i = 0; i < FMath::Min(N, DistanceEntryPairs.Num()); ++i)
@@ -107,9 +129,21 @@ TArray<FVectorDatabaseResult> UVectorDatabase::GetTopNStructMatches(const TArray
         }
     }
 
-    DistanceEntryPairs.Sort([](const TPair<float, UVectorEntryWrapper*>& A, const TPair<float, UVectorEntryWrapper*>& B) {
-        return A.Key < B.Key;
-    });
+    // Sort based on distance metric
+    if (DistanceMetric == EVectorDistanceMetric::Cosine || DistanceMetric == EVectorDistanceMetric::DotProduct)
+    {
+        // For similarity metrics, higher values are better
+        DistanceEntryPairs.Sort([](const TPair<float, UVectorEntryWrapper*>& A, const TPair<float, UVectorEntryWrapper*>& B) {
+            return A.Key > B.Key;
+        });
+    }
+    else
+    {
+        // For distance metrics, lower values are better
+        DistanceEntryPairs.Sort([](const TPair<float, UVectorEntryWrapper*>& A, const TPair<float, UVectorEntryWrapper*>& B) {
+            return A.Key < B.Key;
+        });
+    }
 
     TArray<FVectorDatabaseResult> Results;
     for (int32 i = 0; i < FMath::Min(N, DistanceEntryPairs.Num()); ++i)
@@ -119,6 +153,7 @@ TArray<FVectorDatabaseResult> UVectorDatabase::GetTopNStructMatches(const TArray
         Result.StructType = DistanceEntryPairs[i].Value->StructType;
         Result.StructData = DistanceEntryPairs[i].Value->StructData;
         Result.Category = DistanceEntryPairs[i].Value->Category;
+        Result.Metadata = DistanceEntryPairs[i].Value->Metadata;
         Results.Add(Result);
     }
 
@@ -138,9 +173,21 @@ TArray<FVectorDatabaseEntry> UVectorDatabase::GetTopNEntriesWithDetails(const TA
         }
     }
 
-    DistanceIndexPairs.Sort([](const TPair<float, int32>& A, const TPair<float, int32>& B) {
-        return A.Key < B.Key;
-    });
+    // Sort based on distance metric
+    if (DistanceMetric == EVectorDistanceMetric::Cosine || DistanceMetric == EVectorDistanceMetric::DotProduct)
+    {
+        // For similarity metrics, higher values are better
+        DistanceIndexPairs.Sort([](const TPair<float, int32>& A, const TPair<float, int32>& B) {
+            return A.Key > B.Key;
+        });
+    }
+    else
+    {
+        // For distance metrics, lower values are better
+        DistanceIndexPairs.Sort([](const TPair<float, int32>& A, const TPair<float, int32>& B) {
+            return A.Key < B.Key;
+        });
+    }
 
     TArray<FVectorDatabaseEntry> Results;
     for (int32 i = 0; i < FMath::Min(N, DistanceIndexPairs.Num()); ++i)
@@ -175,8 +222,6 @@ TArray<FVectorDatabaseEntry> UVectorDatabase::GetAllVectorEntries(const TArray<F
     return Results;
 }
 
-
-
 float UVectorDatabase::CalculateDistance(const TArray<float>& Vec1, const TArray<float>& Vec2) const
 {
     if (Vec1.Num() != Vec2.Num())
@@ -184,21 +229,73 @@ float UVectorDatabase::CalculateDistance(const TArray<float>& Vec1, const TArray
         return MAX_FLT;
     }
 
-    float SumSquaredDiff = 0.0f;
-    for (int32 i = 0; i < Vec1.Num(); ++i)
+    switch (DistanceMetric)
     {
-        float Diff = Vec1[i] - Vec2[i];
-        SumSquaredDiff += (Diff * Diff);
+        case EVectorDistanceMetric::Euclidean:
+        {
+            float SumSquaredDiff = 0.0f;
+            for (int32 i = 0; i < Vec1.Num(); ++i)
+            {
+                float Diff = Vec1[i] - Vec2[i];
+                SumSquaredDiff += (Diff * Diff);
+            }
+            return FMath::Sqrt(SumSquaredDiff);
+        }
+        
+        case EVectorDistanceMetric::Manhattan:
+        {
+            float SumAbsDiff = 0.0f;
+            for (int32 i = 0; i < Vec1.Num(); ++i)
+            {
+                SumAbsDiff += FMath::Abs(Vec1[i] - Vec2[i]);
+            }
+            return SumAbsDiff;
+        }
+        
+        case EVectorDistanceMetric::Cosine:
+        {
+            float DotProduct = 0.0f;
+            float Norm1 = 0.0f;
+            float Norm2 = 0.0f;
+            
+            for (int32 i = 0; i < Vec1.Num(); ++i)
+            {
+                DotProduct += Vec1[i] * Vec2[i];
+                Norm1 += Vec1[i] * Vec1[i];
+                Norm2 += Vec2[i] * Vec2[i];
+            }
+            
+            Norm1 = FMath::Sqrt(Norm1);
+            Norm2 = FMath::Sqrt(Norm2);
+            
+            if (Norm1 == 0.0f || Norm2 == 0.0f)
+            {
+                return 0.0f;
+            }
+            
+            // Return 1 - cosine similarity to convert to a distance (0 means identical)
+            return 1.0f - (DotProduct / (Norm1 * Norm2));
+        }
+        
+        case EVectorDistanceMetric::DotProduct:
+        {
+            float DotProduct = 0.0f;
+            for (int32 i = 0; i < Vec1.Num(); ++i)
+            {
+                DotProduct += Vec1[i] * Vec2[i];
+            }
+            return DotProduct;
+        }
+        
+        default:
+            return MAX_FLT;
     }
-
-    return FMath::Sqrt(SumSquaredDiff);
 }
 
 bool UVectorDatabase::ShouldIncludeEntry(const UVectorEntryWrapper* Entry, const TArray<FString>& Categories) const
 {
     return Categories.Num() == 0 || Categories.Contains(Entry->Category);
 }
-
 
 int32 UVectorDatabase::GetNumberOfEntries() const
 {
@@ -242,60 +339,197 @@ bool UVectorDatabase::RemoveEntry(const TArray<float>& Vector, bool bRemoveAllOc
         RemovalRange = 0.0f;
     }
 
-    // Loop through the Vectors array
-    for (int32 i = 0; i < Vectors.Num(); ++i)
+    // Loop through the Vectors array in reverse to avoid index shifting issues
+    for (int32 i = Vectors.Num() - 1; i >= 0; --i)
     {
         // Check if the current vector should be removed based on the distance or exact match
         if ((RemovalRange > 0.0f && CalculateDistance(Vectors[i], Vector) <= RemovalRange) || Vectors[i] == Vector)
         {
-            // Remove the vector and corresponding entry
-            Vectors.RemoveAt(i);
+            // Remove the entry and vector
+            if (Entries[i] && Entries[i]->IsValidLowLevel())
+            {
+                Entries[i]->ConditionalBeginDestroy();
+            }
             Entries.RemoveAt(i);
+            Vectors.RemoveAt(i);
             bEntryRemoved = true;
 
-            // If not removing all occurrences, return immediately after the first removal
+            // If we're not removing all occurrences, break after the first match
             if (!bRemoveAllOccurrences)
             {
-                return true;
+                break;
             }
-
-            // Adjust index to account for the removed element
-            --i;
         }
     }
 
     return bEntryRemoved;
 }
 
-// TArray<FVectorDatabaseEntry> UVectorDatabase::GetTopNEntriesWithDetails(const TArray<float>& QueryVector, int32 N) const
-// {
-//     TArray<TPair<float, int32>> DistanceIndexPairs;
+FVectorDatabaseStats UVectorDatabase::GetDatabaseStats() const
+{
+    FVectorDatabaseStats Stats;
+    Stats.TotalEntries = Entries.Num();
+    Stats.StringEntries = GetNumberOfStringEntries();
+    Stats.ObjectEntries = GetNumberOfObjectEntries();
+    Stats.StructEntries = GetNumberOfStructEntries();
+    Stats.VectorDimension = GetVectorDimension();
     
-//     for (int32 i = 0; i < Vectors.Num(); ++i)
-//     {
-//         if (QueryVector.Num() == Vectors[i].Num())
-//         {
-//             float Distance = CalculateDistance(QueryVector, Vectors[i]);
-//             DistanceIndexPairs.Add(TPair<float, int32>(Distance, i));
-//         }
-//     }
+    // Collect categories and counts
+    TMap<FString, int32> CategoryCountMap;
+    for (const UVectorEntryWrapper* Entry : Entries)
+    {
+        if (!Entry->Category.IsEmpty())
+        {
+            if (!CategoryCountMap.Contains(Entry->Category))
+            {
+                CategoryCountMap.Add(Entry->Category, 0);
+                Stats.Categories.Add(Entry->Category);
+            }
+            CategoryCountMap[Entry->Category]++;
+        }
+    }
+    
+    Stats.CategoryCounts = CategoryCountMap;
+    
+    return Stats;
+}
 
-//     DistanceIndexPairs.Sort([](const TPair<float, int32>& A, const TPair<float, int32>& B) {
-//         return A.Key < B.Key;
-//     });
+TArray<FString> UVectorDatabase::GetUniqueCategories() const
+{
+    TSet<FString> UniqueCategories;
+    for (const UVectorEntryWrapper* Entry : Entries)
+    {
+        if (!Entry->Category.IsEmpty())
+        {
+            UniqueCategories.Add(Entry->Category);
+        }
+    }
+    
+    TArray<FString> Result;
+    for (const FString& Category : UniqueCategories)
+    {
+        Result.Add(Category);
+    }
+    
+    return Result;
+}
 
-//     TArray<FVectorDatabaseEntry> Results;
-//     for (int32 i = 0; i < FMath::Min(N, DistanceIndexPairs.Num()); ++i)
-//     {
-//         FVectorDatabaseEntry Result;
-//         Result.Distance = DistanceIndexPairs[i].Key;
-//         Result.Vector = Vectors[DistanceIndexPairs[i].Value];
-//         Result.Entry = Entries[DistanceIndexPairs[i].Value];
-//         Results.Add(Result);
-//     }
+int32 UVectorDatabase::GetEntryCountForCategory(const FString& Category) const
+{
+    int32 Count = 0;
+    for (const UVectorEntryWrapper* Entry : Entries)
+    {
+        if (Entry->Category == Category)
+        {
+            Count++;
+        }
+    }
+    return Count;
+}
 
-//     return Results;
-// }
+TArray<FVectorDatabaseEntry> UVectorDatabase::GetEntriesForCategory(const FString& Category) const
+{
+    TArray<FVectorDatabaseEntry> Result;
+    
+    for (int32 i = 0; i < Entries.Num(); ++i)
+    {
+        if (Entries[i]->Category == Category)
+        {
+            FVectorDatabaseEntry Entry;
+            Entry.Distance = 0.0f;
+            Entry.Vector = Vectors[i];
+            Entry.Entry = Entries[i];
+            Result.Add(Entry);
+        }
+    }
+    
+    return Result;
+}
+
+void UVectorDatabase::SetDistanceMetric(EVectorDistanceMetric InMetric)
+{
+    DistanceMetric = InMetric;
+}
+
+EVectorDistanceMetric UVectorDatabase::GetDistanceMetric() const
+{
+    return DistanceMetric;
+}
+
+void UVectorDatabase::ClearDatabase()
+{
+    for (UVectorEntryWrapper* Entry : Entries)
+    {
+        if (Entry && Entry->IsValidLowLevel())
+        {
+            Entry->ConditionalBeginDestroy();
+        }
+    }
+    Entries.Empty();
+    Vectors.Empty();
+}
+
+bool UVectorDatabase::IsEmpty() const
+{
+    return Entries.Num() == 0;
+}
+
+int32 UVectorDatabase::GetVectorDimension() const
+{
+    if (Vectors.Num() == 0)
+    {
+        return 0;
+    }
+    
+    return Vectors[0].Num();
+}
+
+bool UVectorDatabase::HasConsistentVectorDimension() const
+{
+    if (Vectors.Num() <= 1)
+    {
+        return true;
+    }
+    
+    int32 Dimension = Vectors[0].Num();
+    for (int32 i = 1; i < Vectors.Num(); ++i)
+    {
+        if (Vectors[i].Num() != Dimension)
+        {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+void UVectorDatabase::NormalizeVectors()
+{
+    for (int32 i = 0; i < Vectors.Num(); ++i)
+    {
+        float Norm = 0.0f;
+        for (int32 j = 0; j < Vectors[i].Num(); ++j)
+        {
+            Norm += Vectors[i][j] * Vectors[i][j];
+        }
+        
+        Norm = FMath::Sqrt(Norm);
+        
+        if (Norm > 0.0f)
+        {
+            for (int32 j = 0; j < Vectors[i].Num(); ++j)
+            {
+                Vectors[i][j] /= Norm;
+            }
+        }
+    }
+}
+
+void UVectorDatabase::UpdateVectorDimension()
+{
+    // This function can be used to validate and update vector dimensions
+    // For now, it's just a placeholder for future implementation
+}
 
 void UVectorEntryWrapper::SetStructData(UScriptStruct* InStructType, const void* InStructData)
 {

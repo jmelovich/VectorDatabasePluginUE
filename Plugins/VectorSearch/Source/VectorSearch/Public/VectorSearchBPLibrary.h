@@ -59,6 +59,54 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Vector Database")
     static UVectorDatabase* LoadVectorDatabaseFromAsset(UVectorDatabaseAsset* Asset);
 
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static bool SaveVectorDatabaseToFile(UVectorDatabaseAsset* Asset, const FString& FilePath);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static bool LoadVectorDatabaseFromFile(UVectorDatabaseAsset* Asset, const FString& FilePath);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static TArray<FString> GetUniqueCategoriesFromDatabase(UVectorDatabase* Database);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static int32 GetEntryCountForCategoryInDatabase(UVectorDatabase* Database, const FString& Category);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static TArray<FVectorDatabaseEntry> GetEntriesForCategoryFromDatabase(UVectorDatabase* Database, const FString& Category);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static void SetVectorDatabaseDistanceMetric(UVectorDatabase* Database, EVectorDistanceMetric Metric);
+
+    UFUNCTION(BlueprintPure, Category = "Vector Database")
+    static EVectorDistanceMetric GetVectorDatabaseDistanceMetric(UVectorDatabase* Database);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static void ClearVectorDatabase(UVectorDatabase* Database);
+
+    UFUNCTION(BlueprintPure, Category = "Vector Database")
+    static bool IsVectorDatabaseEmpty(UVectorDatabase* Database);
+
+    UFUNCTION(BlueprintPure, Category = "Vector Database")
+    static int32 GetVectorDimensionFromDatabase(UVectorDatabase* Database);
+
+    UFUNCTION(BlueprintPure, Category = "Vector Database")
+    static bool HasConsistentVectorDimensionInDatabase(UVectorDatabase* Database);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static void NormalizeVectorsInDatabase(UVectorDatabase* Database);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static FVectorDatabaseStats GetVectorDatabaseStats(UVectorDatabase* Database);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static TArray<FString> GetUniqueCategoriesFromAsset(UVectorDatabaseAsset* Asset);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static int32 GetEntryCountForCategoryInAsset(UVectorDatabaseAsset* Asset, const FString& Category);
+
+    UFUNCTION(BlueprintCallable, Category = "Vector Database")
+    static TArray<FVectorDatabaseEntry> GetEntriesForCategoryFromAsset(UVectorDatabaseAsset* Asset, const FString& Category);
+
     static void DeepCopyStruct(UScriptStruct* StructType, void* Dest, const void* Src);
 
     DECLARE_FUNCTION(execGetStructFromVectorDatabaseEntry);
