@@ -63,6 +63,8 @@ void UVectorDatabaseAsset::SaveFromVectorDatabase(UVectorDatabase* Database)
                 NewEntry.Entry->StructType = Entry.Entry->StructType;
                 int32 StructSize = Entry.Entry->StructType->GetStructureSize();
                 NewEntry.Entry->StructData.SetNum(StructSize);
+                
+                // Use our safe DeepCopyStruct method to handle actor references
                 DeepCopyStruct(Entry.Entry->StructType, NewEntry.Entry->StructData.GetData(), Entry.Entry->StructData.GetData());
             }
         }
@@ -93,6 +95,8 @@ UVectorDatabase* UVectorDatabaseAsset::LoadToVectorDatabase() const
                 NewEntry->StructType = Entry.Entry->StructType;
                 int32 StructSize = Entry.Entry->StructType->GetStructureSize();
                 NewEntry->StructData.SetNum(StructSize);
+                
+                // Use our safe DeepCopyStruct method to handle actor references
                 DeepCopyStruct(Entry.Entry->StructType, NewEntry->StructData.GetData(), Entry.Entry->StructData.GetData());
             }
 
@@ -101,6 +105,304 @@ UVectorDatabase* UVectorDatabaseAsset::LoadToVectorDatabase() const
     }
 
     return Database;
+}
+
+// Helper function to safely serialize struct data to JSON
+void SerializeStructToJson(UScriptStruct* StructType, const void* StructData, TSharedPtr<FJsonObject>& JsonObject)
+{
+    if (!StructType || !StructData || !JsonObject.IsValid())
+    {
+        return;
+    }
+
+    for (TFieldIterator<FProperty> It(StructType); It; ++It)
+    {
+        FProperty* Property = *It;
+        FString PropertyName = Property->GetName();
+
+        if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
+        {
+            const void* NestedStructData = StructProp->ContainerPtrToValuePtr<const void>(StructData);
+            UScriptStruct* NestedStructType = StructProp->Struct;
+            
+            if (NestedStructData && NestedStructType)
+            {
+                TSharedPtr<FJsonObject> NestedJsonObject = MakeShared<FJsonObject>();
+                SerializeStructToJson(NestedStructType, NestedStructData, NestedJsonObject);
+                JsonObject->SetObjectField(PropertyName, NestedJsonObject);
+            }
+        }
+        else if (FObjectProperty* ObjectProp = CastField<FObjectProperty>(Property))
+        {
+            // Check if this is an actor reference
+            if (ObjectProp->PropertyClass && ObjectProp->PropertyClass->IsChildOf(AActor::StaticClass()))
+            {
+                // Get the actor reference
+                UObject* ObjRef = ObjectProp->GetPropertyValue_InContainer(StructData);
+                AActor* ActorRef = Cast<AActor>(ObjRef);
+                
+                // If there's an actor reference, store a safe representation
+                if (ActorRef)
+                {
+                    // Store actor name and path as a string for reference
+                    FString ActorPath = ActorRef->GetPathName();
+                    JsonObject->SetStringField(PropertyName + TEXT("_ActorPath"), ActorPath);
+                    
+                    // Set the actual property to null in the JSON
+                    JsonObject->SetField(PropertyName, MakeShared<FJsonValueNull>());
+                    
+                    UE_LOG(LogTemp, Warning, TEXT("Actor reference detected in struct '%s' property '%s'. Storing actor path instead: %s"), 
+                           *StructType->GetName(), *PropertyName, *ActorPath);
+                }
+                else
+                {
+                    // If the reference is already null, store null
+                    JsonObject->SetField(PropertyName, MakeShared<FJsonValueNull>());
+                }
+            }
+            else
+            {
+                // For non-actor object references, try to serialize normally
+                UObject* ObjectRef = ObjectProp->GetPropertyValue_InContainer(StructData);
+                if (ObjectRef)
+                {
+                    JsonObject->SetStringField(PropertyName, ObjectRef->GetPathName());
+                }
+                else
+                {
+                    JsonObject->SetField(PropertyName, MakeShared<FJsonValueNull>());
+                }
+            }
+        }
+        else if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+        {
+            bool BoolValue = BoolProp->GetPropertyValue_InContainer(StructData);
+            JsonObject->SetBoolField(PropertyName, BoolValue);
+        }
+        else if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
+        {
+            int32 IntValue = IntProp->GetPropertyValue_InContainer(StructData);
+            JsonObject->SetNumberField(PropertyName, IntValue);
+        }
+        else if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+        {
+            float FloatValue = FloatProp->GetPropertyValue_InContainer(StructData);
+            JsonObject->SetNumberField(PropertyName, FloatValue);
+        }
+        else if (FDoubleProperty* DoubleProp = CastField<FDoubleProperty>(Property))
+        {
+            double DoubleValue = DoubleProp->GetPropertyValue_InContainer(StructData);
+            JsonObject->SetNumberField(PropertyName, DoubleValue);
+        }
+        else if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
+        {
+            FString StrValue = StrProp->GetPropertyValue_InContainer(StructData);
+            JsonObject->SetStringField(PropertyName, StrValue);
+        }
+        else if (FNameProperty* NameProp = CastField<FNameProperty>(Property))
+        {
+            FName NameValue = NameProp->GetPropertyValue_InContainer(StructData);
+            JsonObject->SetStringField(PropertyName, NameValue.ToString());
+        }
+        else if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(Property))
+        {
+            // Handle arrays (simplified - only handles basic types)
+            TArray<TSharedPtr<FJsonValue>> JsonArray;
+            
+            if (FIntProperty* InnerIntProp = CastField<FIntProperty>(ArrayProp->Inner))
+            {
+                TArray<int32> IntArray;
+                FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(StructData));
+                for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+                {
+                    int32 Value = InnerIntProp->GetPropertyValue(ArrayHelper.GetRawPtr(i));
+                    JsonArray.Add(MakeShared<FJsonValueNumber>(Value));
+                }
+            }
+            else if (FFloatProperty* InnerFloatProp = CastField<FFloatProperty>(ArrayProp->Inner))
+            {
+                TArray<float> FloatArray;
+                FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(StructData));
+                for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+                {
+                    float Value = InnerFloatProp->GetPropertyValue(ArrayHelper.GetRawPtr(i));
+                    JsonArray.Add(MakeShared<FJsonValueNumber>(Value));
+                }
+            }
+            else if (FStrProperty* InnerStrProp = CastField<FStrProperty>(ArrayProp->Inner))
+            {
+                TArray<FString> StrArray;
+                FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(StructData));
+                for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+                {
+                    FString Value = InnerStrProp->GetPropertyValue(ArrayHelper.GetRawPtr(i));
+                    JsonArray.Add(MakeShared<FJsonValueString>(Value));
+                }
+            }
+            
+            JsonObject->SetArrayField(PropertyName, JsonArray);
+        }
+    }
+}
+
+// Helper function to safely deserialize JSON to struct data
+void DeserializeJsonToStruct(UScriptStruct* StructType, void* StructData, const TSharedPtr<FJsonObject>& JsonObject)
+{
+    if (!StructType || !StructData || !JsonObject.IsValid())
+    {
+        return;
+    }
+
+    for (TFieldIterator<FProperty> It(StructType); It; ++It)
+    {
+        FProperty* Property = *It;
+        FString PropertyName = Property->GetName();
+
+        if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
+        {
+            void* NestedStructData = StructProp->ContainerPtrToValuePtr<void>(StructData);
+            UScriptStruct* NestedStructType = StructProp->Struct;
+            
+            if (NestedStructData && NestedStructType)
+            {
+                const TSharedPtr<FJsonObject>* NestedJsonObject;
+                if (JsonObject->TryGetObjectField(PropertyName, NestedJsonObject))
+                {
+                    DeserializeJsonToStruct(NestedStructType, NestedStructData, *NestedJsonObject);
+                }
+            }
+        }
+        else if (FObjectProperty* ObjectProp = CastField<FObjectProperty>(Property))
+        {
+            // Check if this is an actor reference
+            if (ObjectProp->PropertyClass && ObjectProp->PropertyClass->IsChildOf(AActor::StaticClass()))
+            {
+                // For actor references, we'll set them to null
+                ObjectProp->SetPropertyValue_InContainer(StructData, nullptr);
+                
+                // Log a warning about the actor reference
+                UE_LOG(LogTemp, Warning, TEXT("Actor reference in struct '%s' property '%s' was set to null during deserialization."), 
+                       *StructType->GetName(), *PropertyName);
+            }
+            else
+            {
+                // For non-actor object references, try to deserialize normally
+                FString ObjectPath;
+                if (JsonObject->TryGetStringField(PropertyName, ObjectPath))
+                {
+                    // Try to find the object by path
+                    UObject* ObjectRef = FindObject<UObject>(nullptr, *ObjectPath);
+                    if (ObjectRef)
+                    {
+                        ObjectProp->SetPropertyValue_InContainer(StructData, ObjectRef);
+                    }
+                    else
+                    {
+                        ObjectProp->SetPropertyValue_InContainer(StructData, nullptr);
+                    }
+                }
+                else
+                {
+                    ObjectProp->SetPropertyValue_InContainer(StructData, nullptr);
+                }
+            }
+        }
+        else if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+        {
+            bool BoolValue;
+            if (JsonObject->TryGetBoolField(PropertyName, BoolValue))
+            {
+                BoolProp->SetPropertyValue_InContainer(StructData, BoolValue);
+            }
+        }
+        else if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
+        {
+            int32 IntValue;
+            if (JsonObject->TryGetNumberField(PropertyName, IntValue))
+            {
+                IntProp->SetPropertyValue_InContainer(StructData, IntValue);
+            }
+        }
+        else if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+        {
+            float FloatValue;
+            if (JsonObject->TryGetNumberField(PropertyName, FloatValue))
+            {
+                FloatProp->SetPropertyValue_InContainer(StructData, FloatValue);
+            }
+        }
+        else if (FDoubleProperty* DoubleProp = CastField<FDoubleProperty>(Property))
+        {
+            double DoubleValue;
+            if (JsonObject->TryGetNumberField(PropertyName, DoubleValue))
+            {
+                DoubleProp->SetPropertyValue_InContainer(StructData, DoubleValue);
+            }
+        }
+        else if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
+        {
+            FString StrValue;
+            if (JsonObject->TryGetStringField(PropertyName, StrValue))
+            {
+                StrProp->SetPropertyValue_InContainer(StructData, StrValue);
+            }
+        }
+        else if (FNameProperty* NameProp = CastField<FNameProperty>(Property))
+        {
+            FString NameValue;
+            if (JsonObject->TryGetStringField(PropertyName, NameValue))
+            {
+                NameProp->SetPropertyValue_InContainer(StructData, FName(*NameValue));
+            }
+        }
+        else if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(Property))
+        {
+            // Handle arrays (simplified - only handles basic types)
+            const TArray<TSharedPtr<FJsonValue>>* JsonArray;
+            if (JsonObject->TryGetArrayField(PropertyName, JsonArray))
+            {
+                if (FIntProperty* InnerIntProp = CastField<FIntProperty>(ArrayProp->Inner))
+                {
+                    FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(StructData));
+                    ArrayHelper.EmptyAndAddUninitializedValues(JsonArray->Num());
+                    
+                    for (int32 i = 0; i < JsonArray->Num(); ++i)
+                    {
+                        if ((*JsonArray)[i].IsValid() && (*JsonArray)[i]->Type == EJson::Number)
+                        {
+                            InnerIntProp->SetPropertyValue(ArrayHelper.GetRawPtr(i), (*JsonArray)[i]->AsNumber());
+                        }
+                    }
+                }
+                else if (FFloatProperty* InnerFloatProp = CastField<FFloatProperty>(ArrayProp->Inner))
+                {
+                    FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(StructData));
+                    ArrayHelper.EmptyAndAddUninitializedValues(JsonArray->Num());
+                    
+                    for (int32 i = 0; i < JsonArray->Num(); ++i)
+                    {
+                        if ((*JsonArray)[i].IsValid() && (*JsonArray)[i]->Type == EJson::Number)
+                        {
+                            InnerFloatProp->SetPropertyValue(ArrayHelper.GetRawPtr(i), (*JsonArray)[i]->AsNumber());
+                        }
+                    }
+                }
+                else if (FStrProperty* InnerStrProp = CastField<FStrProperty>(ArrayProp->Inner))
+                {
+                    FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(StructData));
+                    ArrayHelper.EmptyAndAddUninitializedValues(JsonArray->Num());
+                    
+                    for (int32 i = 0; i < JsonArray->Num(); ++i)
+                    {
+                        if ((*JsonArray)[i].IsValid() && (*JsonArray)[i]->Type == EJson::String)
+                        {
+                            InnerStrProp->SetPropertyValue(ArrayHelper.GetRawPtr(i), (*JsonArray)[i]->AsString());
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 bool UVectorDatabaseAsset::SaveToFile(const FString& FilePath)
@@ -151,9 +453,17 @@ bool UVectorDatabaseAsset::SaveToFile(const FString& FilePath)
             {
                 EntryObject->SetStringField(TEXT("StructTypeName"), Entry.Entry->StructType->GetName());
                 
-                // Convert struct data to base64 string for storage
-                FString Base64StructData = FBase64::Encode(Entry.Entry->StructData.GetData(), Entry.Entry->StructData.Num());
-                EntryObject->SetStringField(TEXT("StructData"), Base64StructData);
+                // Use our safe serialization function for struct data
+                TSharedPtr<FJsonObject> StructJsonObject = MakeShared<FJsonObject>();
+                SerializeStructToJson(Entry.Entry->StructType, Entry.Entry->StructData.GetData(), StructJsonObject);
+                
+                // Convert struct JSON to string
+                FString StructJsonString;
+                TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&StructJsonString);
+                FJsonSerializer::Serialize(StructJsonObject.ToSharedRef(), Writer);
+                
+                // Store the struct JSON as a string
+                EntryObject->SetStringField(TEXT("StructData"), StructJsonString);
             }
         }
         
@@ -252,10 +562,24 @@ bool UVectorDatabaseAsset::LoadFromFile(const FString& FilePath)
                     
                     if (NewEntry.Entry->StructType)
                     {
-                        FString Base64StructData = EntryObject->GetStringField(TEXT("StructData"));
-                        TArray<uint8> DecodedData;
-                        FBase64::Decode(Base64StructData, DecodedData);
-                        NewEntry.Entry->StructData = DecodedData;
+                        // Get the struct data as a JSON string
+                        FString StructJsonString = EntryObject->GetStringField(TEXT("StructData"));
+                        
+                        // Parse the struct JSON
+                        TSharedPtr<FJsonObject> StructJsonObject;
+                        TSharedRef<TJsonReader<>> StructReader = TJsonReaderFactory<>::Create(StructJsonString);
+                        if (FJsonSerializer::Deserialize(StructReader, StructJsonObject))
+                        {
+                            // Allocate memory for the struct
+                            int32 StructSize = NewEntry.Entry->StructType->GetStructureSize();
+                            NewEntry.Entry->StructData.SetNum(StructSize);
+                            
+                            // Initialize the struct
+                            NewEntry.Entry->StructType->InitializeStruct(NewEntry.Entry->StructData.GetData());
+                            
+                            // Deserialize the JSON to the struct
+                            DeserializeJsonToStruct(NewEntry.Entry->StructType, NewEntry.Entry->StructData.GetData(), StructJsonObject);
+                        }
                     }
                 }
             }
@@ -324,6 +648,40 @@ void UVectorDatabaseAsset::DeepCopyStruct(UScriptStruct* StructType, void* Dest,
             if (DestNestedStruct && SrcNestedStruct && NestedStructType)
             {
                 DeepCopyStruct(NestedStructType, DestNestedStruct, SrcNestedStruct);
+            }
+        }
+        else if (FObjectProperty* ObjectProp = CastField<FObjectProperty>(Property))
+        {
+            // Check if this is an actor reference
+            if (ObjectProp->PropertyClass && ObjectProp->PropertyClass->IsChildOf(AActor::StaticClass()))
+            {
+                // Get the actor reference
+                UObject* ObjRef = ObjectProp->GetPropertyValue_InContainer(Src);
+                AActor* ActorRef = Cast<AActor>(ObjRef);
+                
+                // If there's an actor reference, log a warning and skip it
+                if (ActorRef)
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("Actor reference detected in struct '%s' property '%s'. Actor references cannot be safely serialized and will be skipped."), 
+                           *StructType->GetName(), *Property->GetName());
+                    
+                    // Set the destination to null to avoid crashes
+                    ObjectProp->SetPropertyValue_InContainer(Dest, nullptr);
+                }
+                else
+                {
+                    // If the reference is already null, just copy it
+                    void* DestValuePtr = Property->ContainerPtrToValuePtr<void>(Dest);
+                    const void* SrcValuePtr = Property->ContainerPtrToValuePtr<const void>(Src);
+                    Property->CopyCompleteValue(DestValuePtr, SrcValuePtr);
+                }
+            }
+            else
+            {
+                // For non-actor object references, copy normally
+                void* DestValuePtr = Property->ContainerPtrToValuePtr<void>(Dest);
+                const void* SrcValuePtr = Property->ContainerPtrToValuePtr<const void>(Src);
+                Property->CopyCompleteValue(DestValuePtr, SrcValuePtr);
             }
         }
         else
