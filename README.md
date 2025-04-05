@@ -1,9 +1,20 @@
 # Vector Database Plugin for Unreal Engine 5
 
-This plugin adds a simplified Vector Database type to Unreal Engine 5, designed with blueprints in mind. 
+This plugin adds a simplified Vector Database type to Unreal Engine 5, designed with blueprints in mind. It provides functionality for creating, managing, and querying vector databases with support for various data types and distance metrics.
+
 ## WARNING: WORK IN PROGRESS
 
 This is still in an early state, so don't be surprised if you experience crashes. I am making this plugin for myself for some particular projects, but I figured it'd be nice to share it. If you do try it out and experience issues, feel free to open a new issue with any log information that could be helpful.
+
+## WARNING: Actor References in Structs
+
+The vector database can store structs that contain actor references. However, since actor references are memory addresses, saving these databases to assets or JSON files will invalidate these references. We strongly recommend:
+
+1. Avoiding storing actor references in structs intended for database persistence
+2. If actor references must be used, implement validation checks when retrieving them from the database to prevent engine crashes
+3. Consider using alternative identification methods (like unique IDs or names) instead of direct actor references for persistent storage
+
+Improper handling of invalid actor references can lead to engine instability or crashes.
 
 ## Installation
 
@@ -13,21 +24,98 @@ This repo includes the entire project (UE 5.4) I am using to test & develop this
    - At this point in time, you can attempt to open the project. There is a chance it will work already.
 2. Right click on your .uproject file and click 'Generate Visual Studio project files'
 3. Open the project solution (.sln file) and build the project, ensure there are no compilation errors
-   - if you experience any compilation issues, please post the build log in the issues tab
+   - If you experience any compilation errors, please post the build log in the issues tab
 4. Open your project and search for 'Vector Database' in a blueprint graph to see available functions
 
 This installation guide assumes you have a C++ project, as I have not been able to test compiling this plugin in a blueprint project. If you have a blueprint project, you can quickly & easily create a blank C++ project and do the compilation there, I believe copying/pasting from that project would work.
 
+## Features
+
+### Core Functionality
+- Create vector databases using the 'Create Vector Database' node
+- Add entries of different types:
+  - Strings
+  - Objects
+  - Structs (with support for most variable types - see actor reference warning above)
+- Retrieve entries using various matching methods:
+  - Get Top N Matches (for strings and objects)
+  - Get Top N Struct Matches (with wildcard output for structs)
+  - Get Detailed Top N Matches (returns vectors, distances, and values)
+- Remove entries based on vector matches with optional range and multiple occurrence removal
+- Database statistics and management functions
+
+### Supported Distance Metrics
+- Euclidean Distance
+- Cosine Similarity
+- Manhattan Distance
+- Dot Product
+
+### Vector Generation
+- Built-in OpenAI Embedding generation support
+  - Configurable API endpoint, model, and API key
+  - Returns float arrays compatible with the vector database
+
+### Data Management
+- Category support for organizing entries
+- Database statistics including entry counts by type
+- Vector normalization
+- Database persistence through VectorDatabaseAsset
+  - Save/load to/from files (note actor reference limitations)
+  - Asset-based storage in Unreal Engine (note actor reference limitations)
+
+### Blueprint Integration
+- Comprehensive blueprint function library
+- Pure functions for state queries
+- Custom thunk support for struct handling
+- Latent action support for async operations
+
 ## How does it work?
-- Using the 'Create New Vector Database' node, you can initialize a new vector database and then save a reference to it as a variable.
-- Using this object as the target, you can use the 'Add Entry to Vector Database' nodes to add an entry (and its corresponding vector-an array of floats) of any data type (the plugin currently supports String, Object, and Struct entries-  Structs can contain most variable types however, the String and Object entries really only exist for simplicity in some use cases)
-- To retrieve entries from the database, you can use the 'Get Top N Matches' nodes. These take in the vector database object, a vector (array of floats), and an 'N' value (the amount of matches to return). These nodes then calculate the Top N entries in the database, based off each entry's vector distance from the input vector.
-  - The 'Get Top N Struct Matches' has a wildcard output, to get your struct back from it connect a variable-setter or struct-breaker off of a for each loop, then connect the for each loop array input to the 'Get Top N Struct Matches' wildcard output- the pin type should automatically update.
-  - There is also a 'Get Detailed Top N Matches' which will return a struct that contains each found entry's vector, distance, and then a wrapper object from where its value can get gotten from supplied pure functions (except structs, which have an impure function that takes in the whole output struct as its input)
-  - All of the 'Get Top N Matches' functions will only consider vector database entries with a vector matching the dimensions of the input vector, and with entry types matching the node type. This is because the Vector Databases are data type agnostic- you can put any number or combination of strings, objects, or structs into a database (with vectors of different dimensions too, if you'd like) and it will work- because the get functions only consider entries relevant to them (meaning if you pass in a 700dimension vector, any entries with a vector of different dimensions aren't considered). There is a slight penalty to doing this, in that the getter functions still need to iterate over *every* entry in the array, regardless of whether or not you want to consider them.
-- To remove entries from a database, you can use the 'Remove Entry from Vector Database' node which takes in an input vector and removes any matches. If bRemoveAllOccurences is set to true. then any entry with a matching vector will be removed. There is also a 'RemovalRange' float input, which if set to anything above 0, will remove any matches within (or at) that given distance from the input vector. 
-- Additionally there are pure nodes to get the entry count in the database (as well as seperate getter nodes for getting string entry count, object entry count, and struct entry counts).
 
-## Generating Vectors
+### Database Operations
+1. Create a new vector database using 'Create New Vector Database'
+2. Add entries using type-specific nodes:
+   - AddStringEntryToVectorDatabase
+   - AddObjectEntryToVectorDatabase
+   - AddStructEntryToVectorDatabase (beware of actor references)
+3. Query the database:
+   - GetTopNStringMatches
+   - GetTopNObjectMatches
+   - GetTopNStructMatches
+   - GetTopNEntriesWithDetails
+4. Manage the database:
+   - Remove entries with RemoveEntryFromVectorDatabase
+   - Clear with ClearVectorDatabase
+   - Normalize vectors with NormalizeVectorsInDatabase
 
-Currently this plugin has a 'Generate OpenAI Embedding' blueprint function that takes in a string input, as well as a struct containing the API endpoint, Model, and API key, and makes an API request to the specified endpoint (following the OpenAI Embedding API format) and returns the result as an array of floats ready to be used in the vector database functionality. 
+### Vector Database Asset
+- Save databases to assets with SaveFromVectorDatabase
+- Load databases from assets with LoadToVectorDatabase
+- File-based persistence with SaveToFile/LoadFromFile
+- Note: Validate any actor references after loading due to potential invalidation
+
+### OpenAI Integration
+- Generate embeddings using GenerateOpenAIEmbedding
+- Configure via FOpenAIConfig struct with endpoint, model, and API key
+
+## Technical Details
+- Type-agnostic database implementation
+- Supports vectors of different dimensions
+- Category-based filtering
+- Comprehensive metadata support
+- Struct handling through wrapper classes (with actor reference considerations)
+- Consistent vector dimension checking
+
+## Usage Notes
+- Struct handling requires connecting outputs through For Each loops
+- Distance metric can be set per database
+- All match functions respect vector dimensions and entry types
+- Categories can be used to filter queries
+- Database stats provide detailed breakdowns of contents
+- Always validate actor references retrieved from persisted databases
+
+## Future Plans
+- Additional distance metrics
+- Performance optimizations
+- More vector generation methods
+- Enhanced blueprint documentation
+- Better handling of actor references in persistent storage
